@@ -14,6 +14,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/external/pico-sdk/pico_sdk_init.cmake)
 
 list(APPEND CMAKE_MODULE_PATH
     ${CMAKE_CURRENT_LIST_DIR}/../core/cmake
+    ${CMAKE_CURRENT_LIST_DIR}/../core/external/nanopb/extra
     ${CMAKE_CURRENT_LIST_DIR}/cmake
 )
 include(pico_add_flash_target)
