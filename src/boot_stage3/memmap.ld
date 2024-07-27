@@ -23,7 +23,9 @@
 
 MEMORY
 {
-    FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 2048k
+    FLASH_BOOT(rx) : ORIGIN = 0x10000000, LENGTH = 4k
+    FLASH_APP(rx) : ORIGIN = 0x10000000 + 4k, LENGTH = 1020k
+    FLASH_DATA(rx) : ORIGIN = 0x10000000 + 1024k, LENGTH = 1024k
     RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 256k
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
@@ -40,13 +42,13 @@ SECTIONS
 
     .flash_begin : {
         __flash_binary_start = .;
-    } > FLASH
+    } > FLASH_BOOT
 
     .boot2 : {
         __boot2_start__ = .;
         KEEP (*(.boot2))
         __boot2_end__ = .;
-    } > FLASH
+    } > FLASH_BOOT
 
     ASSERT(__boot2_end__ - __boot2_start__ == 256,
         "ERROR: Pico second stage bootloader must be 256 bytes in size")
@@ -70,14 +72,29 @@ SECTIONS
         __binary_info_header_end = .;
 
         KEEP(core/module/pico-core/src/boot_stage3/CMakeFiles/boot3.dir/boot3.c.obj(.text))
-        . = __flash_binary_start + 0x1000;
-    } > FLASH
+    } > FLASH_BOOT
 
-    .boot3_info : {
+   .ram_vector_table (NOLOAD): {
+        *(.ram_vector_table)
+    } > RAM
+
+    .boot3_data : {
+        __boot3_data_start__ = .;
+        KEEP(core/module/pico-core/src/boot_stage3/CMakeFiles/boot3.dir/boot3.c.obj(.time_critical*))
+        __boot3_data_end__ = .;
+    } > RAM AT> FLASH_BOOT
+    __boot3_data_source__ = LOADADDR(.boot3_data);
+
+    /* Machine inspectable binary information */
+    . = ALIGN(4);
+    .binary_info :
+    {
+        __logical_binary_start = .;
+        KEEP (*(.vectors))
+
         __binary_info_start = .;
-        KEEP (*(.binary_info.keep.*))
+        KEEP(*(.binary_info.keep.*))
         *(.binary_info.*)
-        __binary_info_end = .;
 
         data_cpy_table = .;
         LONG(__etext)
@@ -90,13 +107,11 @@ SECTIONS
         LONG(__scratch_y_start__)
         LONG(__scratch_y_end__)
         LONG(0) /* null terminator */
-
-        . = __flash_binary_start + 0x2000;
-    } > FLASH
+        __binary_info_end = .;
+    } > FLASH_APP
+    . = ALIGN(4);
 
     .text : {
-        __logical_binary_start = .;
-        KEEP (*(.vectors))
         KEEP (*(.reset))
         /* TODO revisit this now memset/memcpy/float in ROM */
         /* bit of a hack right now to exclude all floating point and time critical (e.g. memset, memcpy) code from
@@ -119,30 +134,26 @@ SECTIONS
 
         *(.eh_frame*)
         . = ALIGN(4);
-    } > FLASH
+    } > FLASH_APP
 
     .rodata : {
         *(EXCLUDE_FILE(*libgcc.a: *libc.a:*lib_a-mem*.o *libm.a:) .rodata*)
         . = ALIGN(4);
         *(SORT_BY_ALIGNMENT(SORT_BY_NAME(.flashdata*)))
         . = ALIGN(4);
-    } > FLASH
+    } > FLASH_APP
 
     .ARM.extab :
     {
         *(.ARM.extab* .gnu.linkonce.armextab.*)
-    } > FLASH
+    } > FLASH_APP
 
-    __exidx_start = .;
     .ARM.exidx :
     {
+        __exidx_start = .;
         *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    } > FLASH
-    __exidx_end = .;
-
-   .ram_vector_table (NOLOAD): {
-        *(.ram_vector_table)
-    } > RAM
+        __exidx_end = .;
+    } > FLASH_APP
 
     .data : {
         __data_start__ = .;
@@ -192,7 +203,7 @@ SECTIONS
         . = ALIGN(4);
         /* All data end */
         __data_end__ = .;
-    } > RAM AT> FLASH
+    } > RAM AT> FLASH_APP
     /* __etext is (for backwards compatibility) the name of the .data init source pointer (...) */
     __etext = LOADADDR(.data);
 
@@ -207,7 +218,7 @@ SECTIONS
         *(.scratch_x.*)
         . = ALIGN(4);
         __scratch_x_end__ = .;
-    } > SCRATCH_X AT > FLASH
+    } > SCRATCH_X AT > FLASH_APP
     __scratch_x_source__ = LOADADDR(.scratch_x);
 
     .scratch_y : {
@@ -215,7 +226,7 @@ SECTIONS
         *(.scratch_y.*)
         . = ALIGN(4);
         __scratch_y_end__ = .;
-    } > SCRATCH_Y AT > FLASH
+    } > SCRATCH_Y AT > FLASH_APP
     __scratch_y_source__ = LOADADDR(.scratch_y);
 
     .bss  : {
@@ -255,7 +266,7 @@ SECTIONS
 
     .flash_end : {
         PROVIDE(__flash_binary_end = .);
-    } > FLASH
+    } > FLASH_APP
 
     /* stack limit is poorly named, but historically is maximum heap ptr */
     __StackLimit = ORIGIN(RAM) + LENGTH(RAM);
@@ -265,9 +276,14 @@ SECTIONS
     __StackBottom = __StackTop - SIZEOF(.stack_dummy);
     PROVIDE(__stack = __StackTop);
 
+    __flash_app_start__ = ORIGIN(FLASH_APP);
+    __flash_app_end__ = ORIGIN(FLASH_APP) + LENGTH(FLASH_APP);
+    __flash_data_start__ = ORIGIN(FLASH_DATA);
+    __flash_data_end__ = ORIGIN(FLASH_DATA) + LENGTH(FLASH_DATA);
+
     /* Check if data + heap + stack exceeds RAM limit */
     ASSERT(__StackLimit >= __HeapLimit, "region RAM overflowed")
 
     ASSERT( __binary_info_header_end - __boot3_start <= 256, "Binary info must be in first 256 bytes of the binary")
-    ASSERT( __flash_binary_end < ORIGIN(FLASH) + LENGTH(FLASH) / 2, "Less than half of flash should used to support firmware updates")
+    /* todo assert on extra code */
 }
