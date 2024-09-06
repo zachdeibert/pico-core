@@ -77,7 +77,10 @@ static void reset_handler(void) {
                     boot2);
     }
     *((void (***)())(PPB_BASE + M0PLUS_VTOR_OFFSET)) = &__logical_binary_start;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
     (&__logical_binary_start)[1]();
+#pragma GCC diagnostic pop
     __builtin_trap();
 }
 
